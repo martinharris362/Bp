@@ -26,6 +26,7 @@
         border-radius:8px; box-shadow:0 1px 4px rgba(0,0,0,0.1);
     }
     #chartContainer { background:white; padding:10px; border-radius:8px; margin-top:10px;}
+    #averageBox { background:#ffffff; padding:12px; border-radius:8px; margin:8px 0; box-shadow:0 1px 4px rgba(0,0,0,0.1);}
 </style>
 </head>
 <body>
@@ -35,11 +36,13 @@
 <button onclick="showForm()">➕ Add Reading</button>
 <button onclick="displayReadings()">📋 Show Last 30 Days</button>
 <button onclick="exportChart()">🖼 Export Chart as JPG</button>
+<button onclick="exportCSV()">📊 Export Spreadsheet</button>
 <button onclick="exportData()" class="secondary">💾 Backup Data</button>
 <input type="file" id="importFile" style="display:none" onchange="importData(event)">
 <button onclick="document.getElementById('importFile').click()" class="secondary">📂 Import Data</button>
 
 <div id="formArea" style="display:none" class="card"></div>
+<div id="averageBox" style="display:none"></div>
 <div id="readingsArea"></div>
 <div id="chartContainer" style="display:none">
     <canvas id="bpChart"></canvas>
@@ -51,22 +54,19 @@ const STORAGE_KEY = "bp_readings_v1";
 function getData() {
     return JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
 }
-
 function saveData(data) {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
 }
 
-// --- Date Helpers ---
+// Date helpers
 function todayUK() {
     const d = new Date();
     return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
 }
-
 function ukToISO(ukDate) {
     const [dd, mm, yyyy] = ukDate.split("/");
     return `${yyyy}-${mm}-${dd}`;
 }
-
 function isoToUK(isoDate) {
     const [yyyy, mm, dd] = isoDate.split("-");
     return `${dd}/${mm}/${yyyy}`;
@@ -78,16 +78,10 @@ function showForm() {
         <label>Date (dd/mm/yyyy)</label>
         <input type="text" id="date" value="${todayUK()}">
         <label>Time</label>
-        <select id="ampm">
-            <option value="AM">AM</option>
-            <option value="PM">PM</option>
-        </select>
-        <label>Systolic</label>
-        <input type="number" id="sys" placeholder="e.g. 120">
-        <label>Diastolic</label>
-        <input type="number" id="dia" placeholder="e.g. 80">
-        <label>Pulse</label>
-        <input type="number" id="pulse" placeholder="e.g. 70">
+        <select id="ampm"><option>AM</option><option>PM</option></select>
+        <label>Systolic</label><input type="number" id="sys">
+        <label>Diastolic</label><input type="number" id="dia">
+        <label>Pulse</label><input type="number" id="pulse">
         <button onclick="saveReading()">Save</button>
     `;
     document.getElementById("formArea").style.display = "block";
@@ -95,28 +89,21 @@ function showForm() {
 
 function saveReading() {
     const ukDate = document.getElementById("date").value;
-    if (!ukDate.match(/^\d{2}\/\d{2}\/\d{4}$/)) {
-        alert("Please use date format dd/mm/yyyy");
-        return;
-    }
+    if (!ukDate.match(/^\d{2}\/\d{2}\/\d{4}$/)) return alert("Use dd/mm/yyyy");
 
     const entry = {
         date: ukToISO(ukDate),
         ampm: document.getElementById("ampm").value,
-        sys: parseInt(document.getElementById("sys").value),
-        dia: parseInt(document.getElementById("dia").value),
-        pulse: parseInt(document.getElementById("pulse").value)
+        sys: parseInt(sys.value),
+        dia: parseInt(dia.value),
+        pulse: parseInt(pulse.value)
     };
-
-    if (!entry.sys || !entry.dia || !entry.pulse) {
-        alert("Please fill all values");
-        return;
-    }
+    if (!entry.sys || !entry.dia || !entry.pulse) return alert("Fill all values");
 
     const data = getData();
     data.push(entry);
     saveData(data);
-    document.getElementById("formArea").style.display = "none";
+    formArea.style.display = "none";
     displayReadings();
 }
 
@@ -130,13 +117,35 @@ function last30Days() {
     return days;
 }
 
+function calculateAverages(data) {
+    const last30 = data.slice(-30);
+    if (!last30.length) return null;
+
+    const avg = arr => Math.round(arr.reduce((a,b)=>a+b,0)/arr.length);
+    return {
+        sys: avg(last30.map(e=>e.sys)),
+        dia: avg(last30.map(e=>e.dia)),
+        pulse: avg(last30.map(e=>e.pulse))
+    };
+}
+
 function displayReadings() {
     const data = getData();
     const days = last30Days();
+
+    // Averages
+    const avg = calculateAverages(data);
+    const avgBox = document.getElementById("averageBox");
+    if (avg) {
+        avgBox.innerHTML = `<strong>Average (Last 30 Readings)</strong><br>
+            Systolic: ${avg.sys} | Diastolic: ${avg.dia} | Pulse: ${avg.pulse}`;
+        avgBox.style.display = "block";
+    }
+
     let html = "<h3>Last 30 Days</h3>";
     days.forEach(day => {
         const entries = data.filter(e => e.date === day);
-        if (entries.length === 0) {
+        if (!entries.length) {
             html += `<div class="card"><strong>${isoToUK(day)}</strong><br>No readings</div>`;
         } else {
             entries.forEach(e => {
@@ -145,61 +154,68 @@ function displayReadings() {
             });
         }
     });
-    document.getElementById("readingsArea").innerHTML = html;
+
+    readingsArea.innerHTML = html;
     drawChart(days, data);
 }
 
 let chart;
-
 function drawChart(days, data) {
-    const sysData = [], diaData = [], pulseData = [];
-    days.forEach(day => {
-        const entries = data.filter(e => e.date === day);
-        if (entries.length) {
-            const avg = arr => Math.round(arr.reduce((a,b)=>a+b)/arr.length);
+    const sysData=[], diaData=[], pulseData=[];
+    days.forEach(day=>{
+        const entries=data.filter(e=>e.date===day);
+        if(entries.length){
+            const avg=a=>Math.round(a.reduce((x,y)=>x+y)/a.length);
             sysData.push(avg(entries.map(e=>e.sys)));
             diaData.push(avg(entries.map(e=>e.dia)));
             pulseData.push(avg(entries.map(e=>e.pulse)));
         } else {
-            sysData.push(null);
-            diaData.push(null);
-            pulseData.push(null);
+            sysData.push(null); diaData.push(null); pulseData.push(null);
         }
     });
 
-    document.getElementById("chartContainer").style.display = "block";
-    const ctx = document.getElementById("bpChart");
-
-    if (chart) chart.destroy();
-    chart = new Chart(ctx, {
-        type: "line",
-        data: {
-            labels: days.map(d => isoToUK(d)),
-            datasets: [
-                { label: "Systolic", data: sysData, borderWidth:2 },
-                { label: "Diastolic", data: diaData, borderWidth:2 },
-                { label: "Pulse", data: pulseData, borderWidth:2 }
+    chartContainer.style.display="block";
+    if(chart) chart.destroy();
+    chart=new Chart(bpChart,{
+        type:"line",
+        data:{
+            labels:days.map(d=>isoToUK(d)),
+            datasets:[
+                {label:"Systolic",data:sysData,borderWidth:2},
+                {label:"Diastolic",data:diaData,borderWidth:2},
+                {label:"Pulse",data:pulseData,borderWidth:2}
             ]
         },
-        options: {
-            responsive: true,
-            plugins: { legend: { position: "bottom" }},
-            spanGaps: true
-        }
+        options:{responsive:true,plugins:{legend:{position:"bottom"}},spanGaps:true}
     });
 }
 
 function exportChart() {
-    if (!chart) return alert("No chart to export yet.");
+    if (!chart) return alert("No chart yet");
     const link = document.createElement("a");
     link.href = chart.toBase64Image("image/jpeg", 1);
     link.download = "blood-pressure-chart.jpg";
     link.click();
 }
 
+function exportCSV() {
+    const data = getData();
+    if (!data.length) return alert("No data to export");
+
+    let csv = "Date,Time,Systolic,Diastolic,Pulse\n";
+    data.forEach(e => {
+        csv += `${isoToUK(e.date)},${e.ampm},${e.sys},${e.dia},${e.pulse}\n`;
+    });
+
+    const blob = new Blob([csv], {type:"text/csv"});
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = "blood-pressure-readings.csv";
+    link.click();
+}
+
 function exportData() {
-    const dataStr = JSON.stringify(getData(), null, 2);
-    const blob = new Blob([dataStr], {type:"application/json"});
+    const blob = new Blob([JSON.stringify(getData())], {type:"application/json"});
     const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
     link.download = "bp-backup.json";
@@ -207,19 +223,13 @@ function exportData() {
 }
 
 function importData(event) {
-    const file = event.target.files[0];
     const reader = new FileReader();
     reader.onload = e => {
-        try {
-            const imported = JSON.parse(e.target.result);
-            saveData(imported);
-            alert("Data imported successfully");
-            displayReadings();
-        } catch {
-            alert("Invalid file");
-        }
+        saveData(JSON.parse(e.target.result));
+        alert("Imported successfully");
+        displayReadings();
     };
-    reader.readAsText(file);
+    reader.readAsText(event.target.files[0]);
 }
 </script>
 <script>
@@ -227,7 +237,6 @@ function importData(event) {
     navigator.serviceWorker.register("service-worker.js");
   }
 </script>
-
 </body>
 </html>
 

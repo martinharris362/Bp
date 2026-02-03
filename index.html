@@ -174,7 +174,7 @@ function drawChart(days, data) {
         }
     });
 
-    chartContainer.style.display="block";
+    <!--chartContainer.style.display="block";
     if(chart) chart.destroy();
     chart=new Chart(bpChart,{
         type:"line",
@@ -189,7 +189,7 @@ function drawChart(days, data) {
         options:{responsive:true,plugins:{legend:{position:"bottom"}},spanGaps:true}
     });
 }
-
+-->
 function exportChart() {
     if (!chart) return alert("No chart yet");
     const link = document.createElement("a");
@@ -239,6 +239,7 @@ function importData(event) {
 </script>
 </body>
 </html>
+
 
 
 

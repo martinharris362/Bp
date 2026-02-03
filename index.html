@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Blood Pressure Tracker</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+    body { font-family: Arial, sans-serif; margin: 10px; background:#f4f6f8; }
+    h1 { text-align:center; }
+    button {
+        width:100%; padding:14px; margin:6px 0;
+        font-size:16px; border:none; border-radius:8px;
+        background:#2d89ef; color:white;
+    }
+    button.secondary { background:#666; }
+    input, select {
+        width:100%; padding:10px; margin:6px 0;
+        font-size:16px;
+    }
+    .card {
+        background:white; padding:10px; margin:6px 0;
+        border-radius:8px; box-shadow:0 1px 4px rgba(0,0,0,0.1);
+    }
+    #chartContainer { background:white; padding:10px; border-radius:8px; margin-top:10px;}
+</style>
+</head>
+<body>
+
+<h1>Blood Pressure Tracker</h1>
+
+<button onclick="showForm()">➕ Add Reading</button>
+<button onclick="displayReadings()">📋 Show Last 30 Days</button>
+<button onclick="exportChart()">🖼 Export Chart as JPG</button>
+<button onclick="exportData()" class="secondary">💾 Backup Data</button>
+<input type="file" id="importFile" style="display:none" onchange="importData(event)">
+<button onclick="document.getElementById('importFile').click()" class="secondary">📂 Import Data</button>
+
+<div id="formArea" style="display:none" class="card"></div>
+<div id="readingsArea"></div>
+<div id="chartContainer" style="display:none">
+    <canvas id="bpChart"></canvas>
+</div>
+
+<script>
+const STORAGE_KEY = "bp_readings_v1";
+
+function getData() {
+    return JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
+}
+
+function saveData(data) {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+}
+
+// --- Date Helpers ---
+function todayUK() {
+    const d = new Date();
+    return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
+}
+
+function ukToISO(ukDate) {
+    const [dd, mm, yyyy] = ukDate.split("/");
+    return `${yyyy}-${mm}-${dd}`;
+}
+
+function isoToUK(isoDate) {
+    const [yyyy, mm, dd] = isoDate.split("-");
+    return `${dd}/${mm}/${yyyy}`;
+}
+
+function showForm() {
+    document.getElementById("formArea").innerHTML = `
+        <h3>Add Reading</h3>
+        <label>Date (dd/mm/yyyy)</label>
+        <input type="text" id="date" value="${todayUK()}">
+        <label>Time</label>
+        <select id="ampm">
+            <option value="AM">AM</option>
+            <option value="PM">PM</option>
+        </select>
+        <label>Systolic</label>
+        <input type="number" id="sys" placeholder="e.g. 120">
+        <label>Diastolic</label>
+        <input type="number" id="dia" placeholder="e.g. 80">
+        <label>Pulse</label>
+        <input type="number" id="pulse" placeholder="e.g. 70">
+        <button onclick="saveReading()">Save</button>
+    `;
+    document.getElementById("formArea").style.display = "block";
+}
+
+function saveReading() {
+    const ukDate = document.getElementById("date").value;
+    if (!ukDate.match(/^\d{2}\/\d{2}\/\d{4}$/)) {
+        alert("Please use date format dd/mm/yyyy");
+        return;
+    }
+
+    const entry = {
+        date: ukToISO(ukDate),
+        ampm: document.getElementById("ampm").value,
+        sys: parseInt(document.getElementById("sys").value),
+        dia: parseInt(document.getElementById("dia").value),
+        pulse: parseInt(document.getElementById("pulse").value)
+    };
+
+    if (!entry.sys || !entry.dia || !entry.pulse) {
+        alert("Please fill all values");
+        return;
+    }
+
+    const data = getData();
+    data.push(entry);
+    saveData(data);
+    document.getElementById("formArea").style.display = "none";
+    displayReadings();
+}
+
+function last30Days() {
+    const days = [];
+    for (let i = 29; i >= 0; i--) {
+        const d = new Date();
+        d.setDate(d.getDate() - i);
+        days.push(d.toISOString().split("T")[0]);
+    }
+    return days;
+}
+
+function displayReadings() {
+    const data = getData();
+    const days = last30Days();
+    let html = "<h3>Last 30 Days</h3>";
+    days.forEach(day => {
+        const entries = data.filter(e => e.date === day);
+        if (entries.length === 0) {
+            html += `<div class="card"><strong>${isoToUK(day)}</strong><br>No readings</div>`;
+        } else {
+            entries.forEach(e => {
+                html += `<div class="card"><strong>${isoToUK(day)} (${e.ampm})</strong><br>
+                    Sys: ${e.sys} | Dia: ${e.dia} | Pulse: ${e.pulse}</div>`;
+            });
+        }
+    });
+    document.getElementById("readingsArea").innerHTML = html;
+    drawChart(days, data);
+}
+
+let chart;
+
+function drawChart(days, data) {
+    const sysData = [], diaData = [], pulseData = [];
+    days.forEach(day => {
+        const entries = data.filter(e => e.date === day);
+        if (entries.length) {
+            const avg = arr => Math.round(arr.reduce((a,b)=>a+b)/arr.length);
+            sysData.push(avg(entries.map(e=>e.sys)));
+            diaData.push(avg(entries.map(e=>e.dia)));
+            pulseData.push(avg(entries.map(e=>e.pulse)));
+        } else {
+            sysData.push(null);
+            diaData.push(null);
+            pulseData.push(null);
+        }
+    });
+
+    document.getElementById("chartContainer").style.display = "block";
+    const ctx = document.getElementById("bpChart");
+
+    if (chart) chart.destroy();
+    chart = new Chart(ctx, {
+        type: "line",
+        data: {
+            labels: days.map(d => isoToUK(d)),
+            datasets: [
+                { label: "Systolic", data: sysData, borderWidth:2 },
+                { label: "Diastolic", data: diaData, borderWidth:2 },
+                { label: "Pulse", data: pulseData, borderWidth:2 }
+            ]
+        },
+        options: {
+            responsive: true,
+            plugins: { legend: { position: "bottom" }},
+            spanGaps: true
+        }
+    });
+}
+
+function exportChart() {
+    if (!chart) return alert("No chart to export yet.");
+    const link = document.createElement("a");
+    link.href = chart.toBase64Image("image/jpeg", 1);
+    link.download = "blood-pressure-chart.jpg";
+    link.click();
+}
+
+function exportData() {
+    const dataStr = JSON.stringify(getData(), null, 2);
+    const blob = new Blob([dataStr], {type:"application/json"});
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = "bp-backup.json";
+    link.click();
+}
+
+function importData(event) {
+    const file = event.target.files[0];
+    const reader = new FileReader();
+    reader.onload = e => {
+        try {
+            const imported = JSON.parse(e.target.result);
+            saveData(imported);
+            alert("Data imported successfully");
+            displayReadings();
+        } catch {
+            alert("Invalid file");
+        }
+    };
+    reader.readAsText(file);
+}
+</script>
+
+</body>
+</html>
+

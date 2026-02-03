@@ -159,7 +159,7 @@ function displayReadings() {
     drawChart(days, data);
 }
 
-<!--let chart;
+let chart;
 function drawChart(days, data) {
     const sysData=[], diaData=[], pulseData=[];
     days.forEach(day=>{
@@ -188,7 +188,7 @@ function drawChart(days, data) {
         },
         options:{responsive:true,plugins:{legend:{position:"bottom"}},spanGaps:true}
     });
-}-->
+}
 
 function exportChart() {
     if (!chart) return alert("No chart yet");
@@ -239,6 +239,7 @@ function importData(event) {
 </script>
 </body>
 </html>
+
 
 
 
